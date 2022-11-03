@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/dgraph-io/badger/v3"
-
 	"github.com/spf13/cobra"
 )
 
