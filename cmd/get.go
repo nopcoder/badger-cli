@@ -15,7 +15,7 @@ var getCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
 		dir, _ := flags.GetString("dir")
-		opts := badger.DefaultOptions(dir).WithLogger(nil)
+		opts := badger.DefaultOptions(dir).WithReadOnly(true).WithLogger(nil)
 		db, err := badger.Open(opts)
 		if err != nil {
 			log.Fatalln(err)

@@ -19,7 +19,7 @@ var listCmd = &cobra.Command{
 		prefix, _ := flags.GetString("prefix")
 		limit, _ := flags.GetInt("limit")
 		offset, _ := flags.GetInt("offset")
-		opts := badger.DefaultOptions(dir).WithLogger(nil)
+		opts := badger.DefaultOptions(dir).WithReadOnly(true).WithLogger(nil)
 		db, err := badger.Open(opts)
 		if err != nil {
 			log.Fatalln(err)
