@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"log"
 
-	"github.com/bah2830/badger-cli/pkg/badger"
+	"github.com/dgraph-io/badger/v3"
+
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var setCmd = &cobra.Command{
@@ -14,30 +13,34 @@ var setCmd = &cobra.Command{
 	Short: "Set a key and its value",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		db, err := badger.Open(cmd.Flag("dir").Value.String())
+		flags := cmd.Flags()
+		dir, _ := flags.GetString("dir")
+		ttl, _ := flags.GetDuration("ttl")
+		opts := badger.DefaultOptions(dir).WithLogger(nil)
+		db, err := badger.Open(opts)
 		if err != nil {
 			log.Fatalln(err)
 		}
 		defer db.Close()
 
-		ttl := viper.GetDuration("ttl")
-		var opts *badger.EntryOptions
-		if ttl.Seconds() > 0 {
-			opts = &badger.EntryOptions{
-				TTL: ttl,
+		key := args[0]
+		value := args[1]
+		err = db.Update(func(txn *badger.Txn) error {
+			// with ttl
+			if ttl.Seconds() > 0 {
+				e := badger.NewEntry([]byte(key), []byte(value)).WithTTL(ttl)
+				return txn.SetEntry(e)
 			}
-		}
-
-		if err := db.Set(args[0], args[1], opts); err != nil {
+			// just set the key/value
+			return txn.Set([]byte(key), []byte(value))
+		})
+		if err != nil {
 			log.Fatalln(err)
 		}
-
-		fmt.Println(args[0])
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(setCmd)
 	setCmd.PersistentFlags().Duration("ttl", 0, "Set ttl for the new key")
-	viper.BindPFlag("ttl", setCmd.PersistentFlags().Lookup("ttl"))
 }

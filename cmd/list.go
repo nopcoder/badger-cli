@@ -3,36 +3,68 @@ package cmd
 import (
 	"fmt"
 	"log"
-	"strings"
+	"os"
+	"text/tabwriter"
 
-	"github.com/bah2830/badger-cli/pkg/badger"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List keys in the database",
 	Run: func(cmd *cobra.Command, args []string) {
-		db, err := badger.Open(cmd.Flag("dir").Value.String())
+		flags := cmd.Flags()
+		dir, _ := flags.GetString("dir")
+		prefix, _ := flags.GetString("prefix")
+		limit, _ := flags.GetInt("limit")
+		offset, _ := flags.GetInt("offset")
+		opts := badger.DefaultOptions(dir).WithLogger(nil)
+		db, err := badger.Open(opts)
 		if err != nil {
 			log.Fatalln(err)
 		}
 		defer db.Close()
 
-		keys, total, err := db.List(cmd.Flag("prefix").Value.String(), viper.GetInt("limit"), viper.GetInt("offset"))
+		w := tabwriter.NewWriter(os.Stdout, 0, 80, 1, ' ', tabwriter.Debug)
+		defer w.Flush()
+		_, _ = fmt.Fprintf(w, "Key\tSize\tVersion\tMeta\n")
+
+		err = db.View(func(txn *badger.Txn) error {
+			opts := badger.DefaultIteratorOptions
+			opts.PrefetchValues = false
+
+			if limit > 0 {
+				opts.PrefetchSize = limit
+			}
+			if prefix != "" {
+				opts.Prefix = []byte(prefix)
+			}
+			it := txn.NewIterator(opts)
+			defer it.Close()
+
+			currentOffset := 0
+			keys := 0
+			for it.Rewind(); it.ValidForPrefix([]byte(prefix)); it.Next() {
+				currentOffset++
+				if currentOffset < offset {
+					continue
+				}
+
+				item := it.Item()
+				value := string(item.KeyCopy(nil))
+				_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%v\n", value, item.EstimatedSize(), item.Version(), item.UserMeta())
+				keys++
+				if limit > 0 && keys >= limit {
+					break
+				}
+			}
+
+			return nil
+		})
 		if err != nil {
 			log.Fatalln(err)
 		}
-
-		fmt.Printf("% -30s % 10s % 10s % 5s\n", "KEY", "VERSION", "SIZE", "META")
-		fmt.Println(strings.Repeat("=", 60))
-		for _, k := range keys {
-			fmt.Println(k)
-		}
-
-		fmt.Printf("\n\nReturned keys:   %d\n", len(keys))
-		fmt.Printf("Matched keys:    %d\n", total)
 	},
 }
 
@@ -41,6 +73,4 @@ func init() {
 	listCmd.PersistentFlags().StringP("prefix", "p", "", "Key prefix for the search")
 	listCmd.PersistentFlags().IntP("limit", "l", 200, "Number of results to return")
 	listCmd.PersistentFlags().IntP("offset", "o", 0, "Offset to start at")
-	viper.BindPFlag("limit", listCmd.PersistentFlags().Lookup("limit"))
-	viper.BindPFlag("offset", listCmd.PersistentFlags().Lookup("offset"))
 }

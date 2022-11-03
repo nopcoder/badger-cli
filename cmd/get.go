@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/bah2830/badger-cli/pkg/badger"
+	"github.com/dgraph-io/badger/v3"
+
 	"github.com/spf13/cobra"
 )
 
@@ -13,19 +14,36 @@ var getCmd = &cobra.Command{
 	Short: "Get content of a specific key",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		db, err := badger.Open(cmd.Flag("dir").Value.String())
+		flags := cmd.Flags()
+		dir, _ := flags.GetString("dir")
+		opts := badger.DefaultOptions(dir).WithLogger(nil)
+		db, err := badger.Open(opts)
 		if err != nil {
 			log.Fatalln(err)
 		}
 		defer db.Close()
 
-		values, err := db.Get(args...)
+		err = db.View(func(txn *badger.Txn) error {
+			for _, key := range args {
+				item, err := txn.Get([]byte(key))
+				if err != nil {
+					if err == badger.ErrKeyNotFound {
+						return fmt.Errorf("key %s not found", key)
+					}
+					return err
+				}
+
+				value, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
+				}
+				fmt.Println(string(value))
+			}
+
+			return nil
+		})
 		if err != nil {
 			log.Fatalln(err)
-		}
-
-		for _, v := range values {
-			fmt.Println(v)
 		}
 	},
 }
